@@ -12,6 +12,7 @@ interface User {
   role: UserRole;
   active: boolean;
   created_at: string;
+  password: string;
 }
 
 interface UserProgress {
@@ -37,6 +38,7 @@ export default function AdminUsersPage() {
   const [progress, setProgress] = useState<UserProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showPasswordId, setShowPasswordId] = useState<string | null>(null);
 
   // Create user form state
   const [newUserId, setNewUserId] = useState('');
@@ -158,7 +160,7 @@ export default function AdminUsersPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {['User ID', 'Name', 'Role', 'Status', 'Created', 'Actions'].map(h => (
+                  {['User ID', 'Name', 'Role', 'Password', 'Status', 'Created', 'Actions'].map(h => (
                     <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {h}
                     </th>
@@ -178,6 +180,31 @@ export default function AdminUsersPage() {
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${ROLE_COLORS[user.role]}`}>
                         {user.role}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-gray-700">
+                          {showPasswordId === user.id ? user.password : '••••••••'}
+                        </span>
+                        <button
+                          onClick={() => setShowPasswordId(showPasswordId === user.id ? null : user.id)}
+                          title={showPasswordId === user.id ? 'Hide password' : 'Show password'}
+                          className="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          {showPasswordId === user.id ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                              <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                              <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${user.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
@@ -335,10 +362,6 @@ export default function AdminUsersPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
                 <p className="text-xs text-gray-400 mt-1">Share this password with the user after creating their account.</p>
-              </div>
-
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
-                Make sure to note down the password — it won't be shown again after creation.
               </div>
 
               <div className="flex gap-3 pt-2">
