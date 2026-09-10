@@ -198,3 +198,30 @@ export async function getPromptCompletionStats() {
   }
   return data;
 }
+
+export async function deleteEvaluation(id: string) {
+  const { error } = await supabase
+    .from('evaluations')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('deleteEvaluation error:', error);
+    return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+export async function deleteAllEvaluations() {
+  // Delete all rows — use neq on a non-null column as a wildcard
+  const { error } = await supabase
+    .from('evaluations')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000');
+
+  if (error) {
+    console.error('deleteAllEvaluations error:', error);
+    return { success: false, error: error.message };
+  }
+  return { success: true };
+}

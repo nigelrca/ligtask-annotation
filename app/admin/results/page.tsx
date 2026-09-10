@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getEvaluationStats, getRecentEvaluations } from '@/app/actions/admin';
+import { getEvaluationStats, getRecentEvaluations, deleteEvaluation, deleteAllEvaluations } from '@/app/actions/admin';
 
 interface Evaluation {
   id: string;
@@ -22,6 +22,9 @@ export default function AdminResultsPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   useEffect(() => {
     Promise.all([getEvaluationStats(), getRecentEvaluations()]).then(
@@ -74,6 +77,28 @@ export default function AdminResultsPage() {
     URL.revokeObjectURL(url);
   }
 
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    await deleteEvaluation(id);
+    setEvaluations(prev => prev.filter(e => e.id !== id));
+    setStats(prev => ({
+      ...prev,
+      total: prev.total - 1,
+    }));
+    if (expandedId === id) setExpandedId(null);
+    setDeletingId(null);
+  }
+
+  async function handleDeleteAll() {
+    setDeletingAll(true);
+    await deleteAllEvaluations();
+    setEvaluations([]);
+    setStats({ total: 0, translations: 0, annotations: 0 });
+    setExpandedId(null);
+    setDeletingAll(false);
+    setShowDeleteAllModal(false);
+  }
+
   const tabs: { key: TabType; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: stats.total },
     { key: 'translations', label: 'Translations', count: stats.translations },
@@ -90,13 +115,25 @@ export default function AdminResultsPage() {
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Evaluation Results</h1>
           </div>
-          <button
-            onClick={handleExport}
-            disabled={filtered.length === 0}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Export CSV
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowDeleteAllModal(true)}
+              disabled={evaluations.length === 0}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+              </svg>
+              Delete All
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={filtered.length === 0}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Export CSV
+            </button>
+          </div>
         </div>
       </header>
 
@@ -153,7 +190,7 @@ export default function AdminResultsPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Base ID', 'Task Instance ID', 'Task', 'Annotator', 'Result', 'Submitted', ''].map((h, i) => (
+                  {['Base ID', 'Task Instance ID', 'Task', 'Annotator', 'Result', 'Submitted', '', ''].map((h, i) => (
                     <th key={i} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {h}
                     </th>
@@ -209,6 +246,25 @@ export default function AdminResultsPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                         {expandedId === e.id ? '▲' : '▼'}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <button
+                          onClick={e2 => { e2.stopPropagation(); handleDelete(e.id); }}
+                          disabled={deletingId === e.id}
+                          title="Delete this result"
+                          className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
+                        >
+                          {deletingId === e.id ? (
+                            <svg className="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                            </svg>
+                          )}
+                        </button>
+                      </td>
                     </tr>
 
                     {/* Expanded row — shows revision if present */}
@@ -232,6 +288,47 @@ export default function AdminResultsPage() {
           )}
         </div>
       </main>
+
+      {/* Delete All Confirmation Modal */}
+      {showDeleteAllModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Delete All Results?</h2>
+                <p className="text-sm text-gray-500">This will permanently remove all {stats.total} evaluation records. This cannot be undone.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5 justify-end">
+              <button
+                onClick={() => setShowDeleteAllModal(false)}
+                disabled={deletingAll}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAll}
+                disabled={deletingAll}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {deletingAll && (
+                  <svg className="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                )}
+                Yes, Delete All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
