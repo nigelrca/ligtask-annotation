@@ -38,7 +38,7 @@ export default function AdminUsersPage() {
   const [progress, setProgress] = useState<UserProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [showPasswordId, setShowPasswordId] = useState<string | null>(null);
+  const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
 
   // Create user form state
   const [newUserId, setNewUserId] = useState('');
@@ -184,14 +184,18 @@ export default function AdminUsersPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-gray-700">
-                          {showPasswordId === user.id ? user.password : '••••••••'}
+                          {visiblePasswords.has(user.id) ? user.password : '••••••••'}
                         </span>
                         <button
-                          onClick={() => setShowPasswordId(showPasswordId === user.id ? null : user.id)}
-                          title={showPasswordId === user.id ? 'Hide password' : 'Show password'}
+                          onClick={() => setVisiblePasswords(prev => {
+                            const next = new Set(prev);
+                            next.has(user.id) ? next.delete(user.id) : next.add(user.id);
+                            return next;
+                          })}
+                          title={visiblePasswords.has(user.id) ? 'Hide password' : 'Show password'}
                           className="text-gray-400 hover:text-gray-600 transition-colors"
                         >
-                          {showPasswordId === user.id ? (
+                          {visiblePasswords.has(user.id) ? (
                             <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
                               <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
