@@ -93,6 +93,11 @@ async function importDataset() {
     console.warn(`⚠️  Dataset sizes differ! English: ${englishData.length}, Filipino: ${filipinoData.length}`);
   }
 
+  // For the translation task: keep only the SAFE variant (context_intended_to_be_safe: true).
+  // Each query is identical between SAFE and UNSAFE — translators only need one copy per query.
+  const safeEnglishData = englishData.filter((r) => r.context_intended_to_be_safe === true);
+  console.log(`🔍  Filtered to ${safeEnglishData.length} records (SAFE variants only — duplicates removed)\n`);
+
   // 2. Create map for quick lookup by task_instance_id
   const filipinoMap = new Map(filipinoData.map((rec) => [rec.task_instance_id, rec]));
 
@@ -114,7 +119,7 @@ async function importDataset() {
   let skipped = 0;
   let merged = 0;
 
-  for (const enRec of englishData) {
+  for (const enRec of safeEnglishData) {
     // Skip if already exists
     if (existingIds.has(enRec.task_instance_id)) {
       skipped++;
