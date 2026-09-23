@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getAdminPrompts, getPromptCompletionStats } from '@/app/actions/admin';
 
@@ -151,9 +151,8 @@ export default function AdminPromptsPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filtered.map(prompt => (
-                  <>
+                  <React.Fragment key={prompt.id}>
                     <tr
-                      key={prompt.id}
                       className="hover:bg-gray-50 cursor-pointer"
                       onClick={() => setExpandedId(expandedId === prompt.id ? null : prompt.id)}
                     >
@@ -181,14 +180,14 @@ export default function AdminPromptsPage() {
 
                     {/* Expanded row */}
                     {expandedId === prompt.id && (
-                      <tr key={`${prompt.id}-expanded`} className="bg-blue-50">
+                      <tr className="bg-blue-50">
                         <td colSpan={6} className="px-6 py-4">
                           <p className="text-sm font-medium text-gray-700 mb-1">Full English Text:</p>
                           <p className="text-sm text-gray-900">{prompt.english_text}</p>
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
