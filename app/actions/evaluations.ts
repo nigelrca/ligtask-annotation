@@ -40,6 +40,44 @@ export async function getCompletedPromptIds(): Promise<string[]> {
   return data.map((e: { prompt_id: string }) => e.prompt_id);
 }
 
+export interface EvaluationAnswer {
+  promptId: string;
+  translationCorrect: boolean;
+  revisedTranslation: string | null;
+}
+
+/**
+ * Fetch full evaluation answers for the current user.
+ * Returns an array of { promptId, translationCorrect, revisedTranslation }
+ * so the translator page can pre-fill answers when navigating to submitted prompts.
+ */
+export async function getMyEvaluations(): Promise<EvaluationAnswer[]> {
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('user_id', userId)
+    .single();
+
+  if (userError || !userData) return [];
+
+  const { data, error } = await supabase
+    .from('evaluations')
+    .select('prompt_id, translation_correct, revised_translation')
+    .eq('user_id', userData.id)
+    .not('translation_correct', 'is', null); // only translation evaluations
+
+  if (error || !data) return [];
+
+  return data.map((e: { prompt_id: string; translation_correct: boolean; revised_translation: string | null }) => ({
+    promptId: e.prompt_id,
+    translationCorrect: e.translation_correct,
+    revisedTranslation: e.revised_translation,
+  }));
+}
+
 /**
  * Submit a translation evaluation.
  * Called from the translate page.

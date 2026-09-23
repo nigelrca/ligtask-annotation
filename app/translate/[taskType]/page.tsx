@@ -4,7 +4,11 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Prompt, TaskType } from '@/types/database';
 import LogoutButton from '@/app/components/LogoutButton';
-import { submitTranslationEvaluation, getCompletedPromptIds } from '@/app/actions/evaluations';
+import {
+  submitTranslationEvaluation,
+  getMyEvaluations,
+  EvaluationAnswer,
+} from '@/app/actions/evaluations';
 import { getPromptsForAnnotation } from '@/app/actions/prompts';
 
 const TASK_META: Record<string, { label: string }> = {
@@ -21,10 +25,17 @@ export default function TranslateTaskPage() {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Map of promptId → full answer for already-submitted prompts
+  const [evaluations, setEvaluations] = useState<Map<string, EvaluationAnswer>>(new Map());
+
+  // Current form state
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [revisedTranslation, setRevisedTranslation] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+
+  // Whether the current prompt is in "edit mode" (overrides submitted state)
+  const [isEditing, setIsEditing] = useState(false);
 
   const meta = TASK_META[taskType];
 
@@ -34,30 +45,50 @@ export default function TranslateTaskPage() {
       return;
     }
 
-    Promise.all([getPromptsForAnnotation(taskType), getCompletedPromptIds()]).then(([allPrompts, ids]) => {
-      setPrompts(allPrompts as Prompt[]);
-      setCompletedIds(new Set(ids));
-      setLoading(false);
-    });
+    Promise.all([getPromptsForAnnotation(taskType), getMyEvaluations()]).then(
+      ([allPrompts, answers]) => {
+        setPrompts(allPrompts as Prompt[]);
+        const map = new Map<string, EvaluationAnswer>();
+        answers.forEach((a) => map.set(a.promptId, a));
+        setEvaluations(map);
+        setLoading(false);
+      }
+    );
   }, [taskType]);
 
   const currentPrompt = prompts[currentIndex];
+  const currentEval = currentPrompt ? evaluations.get(currentPrompt.id) : undefined;
+  const isSubmitted = !!currentEval && !isEditing;
 
-  const resetForm = () => {
+  // When navigating to a new prompt, reset edit/form state
+  const navigateTo = (index: number) => {
+    setCurrentIndex(index);
     setIsCorrect(null);
     setRevisedTranslation('');
+    setIsEditing(false);
   };
 
   const handlePrevious = () => {
-    if (currentIndex > 0) { setCurrentIndex(currentIndex - 1); resetForm(); }
+    if (currentIndex > 0) navigateTo(currentIndex - 1);
   };
 
   const handleNext = () => {
-    if (currentIndex < prompts.length - 1) { setCurrentIndex(currentIndex + 1); resetForm(); }
+    if (currentIndex < prompts.length - 1) navigateTo(currentIndex + 1);
+  };
+
+  // Enter edit mode — pre-fill with previous answer
+  const handleEdit = () => {
+    if (!currentEval) return;
+    setIsCorrect(currentEval.translationCorrect);
+    setRevisedTranslation(currentEval.revisedTranslation ?? '');
+    setIsEditing(true);
   };
 
   const handleSubmit = async () => {
-    if (isCorrect === null) { alert('Please indicate whether the translation is accurate'); return; }
+    if (isCorrect === null) {
+      alert('Please indicate whether the translation is accurate');
+      return;
+    }
     if (isCorrect === false && !revisedTranslation.trim()) {
       alert('Please provide a revised translation');
       return;
@@ -71,14 +102,31 @@ export default function TranslateTaskPage() {
         revisedTranslation: isCorrect ? null : revisedTranslation,
       });
 
-      if (!result.success) { alert(`Failed to save: ${result.error}`); return; }
+      if (!result.success) {
+        alert(`Failed to save: ${result.error}`);
+        return;
+      }
 
-      setCompletedIds(prev => new Set(prev).add(currentPrompt.id));
+      // Update local evaluations map
+      const newAnswer: EvaluationAnswer = {
+        promptId: currentPrompt.id,
+        translationCorrect: isCorrect,
+        revisedTranslation: isCorrect ? null : revisedTranslation,
+      };
+      setEvaluations((prev) => new Map(prev).set(currentPrompt.id, newAnswer));
 
-      if (currentIndex < prompts.length - 1) {
-        handleNext();
-      } else {
-        resetForm();
+      // Exit edit mode — show submitted state
+      setIsEditing(false);
+      setIsCorrect(null);
+      setRevisedTranslation('');
+
+      // Auto-advance to next unanswered prompt
+      const updatedEvals = new Map(evaluations).set(currentPrompt.id, newAnswer);
+      const nextUnanswered = prompts.findIndex(
+        (p, i) => i > currentIndex && !updatedEvals.has(p.id)
+      );
+      if (nextUnanswered !== -1) {
+        navigateTo(nextUnanswered);
       }
     } catch (err) {
       console.error(err);
@@ -89,16 +137,13 @@ export default function TranslateTaskPage() {
   };
 
   const handleCopyFilipino = () => {
-    if (currentPrompt) {
-      setRevisedTranslation(currentPrompt.filipino_text);
-    }
+    if (currentPrompt) setRevisedTranslation(currentPrompt.filipino_text);
   };
 
-  const completedInPart = prompts.filter(p => completedIds.has(p.id)).length;
-
-  // Submit on Enter key
+  // Submit on Enter key (only in edit/new mode)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isSubmitted) return;
       if (e.key === 'Enter' && isCorrect !== null && !submitting) {
         if (isCorrect === false && !revisedTranslation.trim()) return;
         handleSubmit();
@@ -106,11 +151,17 @@ export default function TranslateTaskPage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isCorrect, revisedTranslation, submitting]);
+  }, [isCorrect, revisedTranslation, submitting, isSubmitted]);
 
+  const completedCount = evaluations.size;
+
+  // ─── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center" style={{ background: 'linear-gradient(to bottom, #F7F7F7, #1C45D5)' }}>
+      <div
+        className="h-screen flex items-center justify-center"
+        style={{ background: 'linear-gradient(to bottom, #F7F7F7, #1C45D5)' }}
+      >
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-600">Loading prompts...</p>
@@ -121,10 +172,16 @@ export default function TranslateTaskPage() {
 
   if (!currentPrompt) {
     return (
-      <div className="h-screen flex items-center justify-center" style={{ background: 'linear-gradient(to bottom, #F7F7F7, #1C45D5)' }}>
+      <div
+        className="h-screen flex items-center justify-center"
+        style={{ background: 'linear-gradient(to bottom, #F7F7F7, #1C45D5)' }}
+      >
         <div className="bg-white rounded-2xl p-8 text-center shadow-xl">
           <p className="text-gray-600 mb-4">No prompts available for this task type.</p>
-          <button onClick={() => router.push('/translate')} className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700">
+          <button
+            onClick={() => router.push('/translate')}
+            className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+          >
             Back to Overview
           </button>
         </div>
@@ -132,8 +189,12 @@ export default function TranslateTaskPage() {
     );
   }
 
+  // ─── Main UI ────────────────────────────────────────────────────────────────
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: 'linear-gradient(to bottom, #F7F7F7, #1C45D5)' }}>
+    <div
+      className="h-screen flex overflow-hidden"
+      style={{ background: 'linear-gradient(to bottom, #F7F7F7, #1C45D5)' }}
+    >
       <div className="fixed top-4 right-4 z-50">
         <LogoutButton />
       </div>
@@ -155,18 +216,18 @@ export default function TranslateTaskPage() {
         {prompts.map((prompt, index) => (
           <button
             key={prompt.id}
-            onClick={() => { setCurrentIndex(index); resetForm(); }}
+            onClick={() => navigateTo(index)}
             className={`w-12 h-12 flex items-center justify-center mb-2 rounded-lg transition-colors font-medium ${
               index === currentIndex
                 ? 'text-white'
-                : completedIds.has(prompt.id)
+                : evaluations.has(prompt.id)
                 ? 'text-gray-700'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
             style={
               index === currentIndex
                 ? { backgroundColor: '#1C45D5' }
-                : completedIds.has(prompt.id)
+                : evaluations.has(prompt.id)
                 ? { backgroundColor: '#B2E3FF' }
                 : undefined
             }
@@ -181,13 +242,15 @@ export default function TranslateTaskPage() {
         <div className="flex items-center justify-center p-8 min-h-full">
           <div className="w-full max-w-5xl space-y-4">
 
+            {/* Header */}
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-gray-800">{meta.label}</p>
               <p className="text-sm font-semibold text-gray-800">
-                {completedInPart}/{prompts.length} reviewed
+                {completedCount}/{prompts.length} reviewed
               </p>
             </div>
 
+            {/* Prev / Next */}
             <div className="flex justify-between">
               <button
                 onClick={handlePrevious}
@@ -221,74 +284,157 @@ export default function TranslateTaskPage() {
                 <div className="bg-blue-50 rounded-xl p-6">
                   <div className="flex justify-between items-start mb-3">
                     <h3 className="text-lg font-bold text-gray-900">Filipino:</h3>
-                    <button
-                      onClick={handleCopyFilipino}
-                      className="text-blue-600 hover:text-blue-700"
-                      title="Copy to revision box"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    </button>
+                    {!isSubmitted && (
+                      <button
+                        onClick={handleCopyFilipino}
+                        className="text-blue-600 hover:text-blue-700"
+                        title="Copy to revision box"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                   <p className="text-gray-800 leading-relaxed">{currentPrompt.filipino_text}</p>
                 </div>
               </div>
 
-              {/* Question */}
-              <div className="pt-4">
-                <h3 className="text-lg font-bold text-red-600 mb-4">
-                  Is the Filipino translation accurate?
-                </h3>
+              {/* ── SUBMITTED STATE ── */}
+              {isSubmitted && currentEval ? (
+                <div className="pt-2 space-y-4">
+                  {/* Submitted badge */}
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-700">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Submitted
+                    </span>
+                  </div>
 
-                <div className="flex gap-4 mb-6">
-                  <button
-                    onClick={() => { setIsCorrect(true); setRevisedTranslation(''); }}
-                    className={`flex-1 py-4 px-6 border-2 rounded-xl font-medium text-lg transition-all ${
-                      isCorrect === true
-                        ? 'border-blue-500 bg-blue-50 text-blue-900'
-                        : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={() => setIsCorrect(false)}
-                    className={`flex-1 py-4 px-6 border-2 rounded-xl font-medium text-lg transition-all ${
-                      isCorrect === false
-                        ? 'border-blue-500 bg-blue-50 text-blue-900'
-                        : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    No
-                  </button>
+                  {/* Their answer */}
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">Your answer</p>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-base ${
+                          currentEval.translationCorrect
+                            ? 'bg-green-100 text-green-800 border border-green-200'
+                            : 'bg-red-100 text-red-800 border border-red-200'
+                        }`}
+                      >
+                        {currentEval.translationCorrect ? (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Yes — Translation is accurate
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            No — Translation needs revision
+                          </>
+                        )}
+                      </span>
+                    </div>
+
+                    {/* Revised translation (if provided) */}
+                    {!currentEval.translationCorrect && currentEval.revisedTranslation && (
+                      <div className="mt-2">
+                        <p className="text-sm font-medium text-gray-500 mb-1">Your revision</p>
+                        <div className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-800 leading-relaxed">
+                          {currentEval.revisedTranslation}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Edit button */}
+                  <div className="flex justify-end pt-2">
+                    <button
+                      id="edit-submission-btn"
+                      onClick={handleEdit}
+                      className="px-8 py-3 border-2 border-blue-600 text-blue-600 font-medium rounded-xl hover:bg-blue-50 transition-colors"
+                    >
+                      Edit
+                    </button>
+                  </div>
                 </div>
 
-                {isCorrect === false && (
-                  <div>
-                    <label className="block text-gray-900 font-medium mb-2">
-                      If 'No', please revise the prompt below
-                    </label>
-                    <textarea
-                      value={revisedTranslation}
-                      onChange={(e) => setRevisedTranslation(e.target.value)}
-                      rows={4}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      placeholder="Enter your revised translation here"
-                    />
-                  </div>
-                )}
-              </div>
+              ) : (
+                /* ── EDITABLE STATE (new or editing) ── */
+                <div className="pt-4 space-y-4">
+                  {isEditing && (
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-amber-100 text-amber-700">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Editing response
+                      </span>
+                    </div>
+                  )}
 
-              <div className="flex justify-end pt-4">
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting || isCorrect === null}
-                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {submitting ? 'Saving...' : 'Submit'}
-                </button>
-              </div>
+                  <h3 className="text-lg font-bold text-red-600">
+                    Is the Filipino translation accurate?
+                  </h3>
+
+                  <div className="flex gap-4">
+                    <button
+                      id="answer-yes-btn"
+                      onClick={() => { setIsCorrect(true); setRevisedTranslation(''); }}
+                      className={`flex-1 py-4 px-6 border-2 rounded-xl font-medium text-lg transition-all ${
+                        isCorrect === true
+                          ? 'border-blue-500 bg-blue-50 text-blue-900'
+                          : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      id="answer-no-btn"
+                      onClick={() => setIsCorrect(false)}
+                      className={`flex-1 py-4 px-6 border-2 rounded-xl font-medium text-lg transition-all ${
+                        isCorrect === false
+                          ? 'border-blue-500 bg-blue-50 text-blue-900'
+                          : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      No
+                    </button>
+                  </div>
+
+                  {isCorrect === false && (
+                    <div>
+                      <label className="block text-gray-900 font-medium mb-2">
+                        If &apos;No&apos;, please revise the prompt below
+                      </label>
+                      <textarea
+                        value={revisedTranslation}
+                        onChange={(e) => setRevisedTranslation(e.target.value)}
+                        rows={4}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        placeholder="Enter your revised translation here"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      id="submit-btn"
+                      onClick={handleSubmit}
+                      disabled={submitting || isCorrect === null}
+                      className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {submitting ? 'Saving...' : 'Submit'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
