@@ -9,7 +9,7 @@ import {
   getMyEvaluations,
   EvaluationAnswer,
 } from '@/app/actions/evaluations';
-import { getPromptsForAnnotation } from '@/app/actions/prompts';
+import { getPromptsForTranslation } from '@/app/actions/prompts';
 
 const TASK_META: Record<string, { label: string }> = {
   NLU: { label: 'Part 1 — Natural Language Understanding' },
@@ -45,7 +45,7 @@ export default function TranslateTaskPage() {
       return;
     }
 
-    Promise.all([getPromptsForAnnotation(taskType), getMyEvaluations()]).then(
+    Promise.all([getPromptsForTranslation(taskType), getMyEvaluations()]).then(
       ([allPrompts, answers]) => {
         setPrompts(allPrompts as Prompt[]);
         const map = new Map<string, EvaluationAnswer>();

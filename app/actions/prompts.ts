@@ -4,36 +4,40 @@ import { supabase } from '@/lib/supabase';
 import { Prompt } from '@/types/database';
 
 /**
- * Get all prompts for translation - returns one prompt per base_id
- * (since translators verify base queries, not task variants)
+ * Get prompts for TRANSLATION VERIFICATION.
+ * Returns only the SAFE variants (context_intended_to_be_safe = true),
+ * optionally filtered by task type — 100 per type, 300 total.
+ *
+ * Translators verify the EN→FIL translation text itself;
+ * the context does not change the query text so UNSAFE duplicates are excluded.
  */
-export async function getPrompts(): Promise<Prompt[]> {
-  // Fetch all prompts grouped by base_id, take the first one per group
-  const { data, error } = await supabase
+export async function getPromptsForTranslation(taskType?: 'NLU' | 'NLR' | 'NLG'): Promise<Prompt[]> {
+  let query = supabase
     .from('prompts')
     .select('*')
+    .eq('context_intended_to_be_safe', true)
     .order('base_id', { ascending: true })
     .order('task_instance_id', { ascending: true });
 
+  if (taskType) {
+    query = query.eq('task_type', taskType);
+  }
+
+  const { data, error } = await query;
+
   if (error) {
-    console.error('getPrompts error:', error);
+    console.error('getPromptsForTranslation error:', error);
     return [];
   }
 
-  // Filter to keep only one prompt per base_id
-  const uniqueByBaseId = new Map<string, Prompt>();
-  (data as Prompt[]).forEach((prompt) => {
-    if (!uniqueByBaseId.has(prompt.base_id)) {
-      uniqueByBaseId.set(prompt.base_id, prompt);
-    }
-  });
-
-  return Array.from(uniqueByBaseId.values());
+  return data as Prompt[];
 }
 
 /**
- * Get all prompts for annotation - returns all 600 records
- * (annotators evaluate each task variant separately)
+ * Get prompts for HUMAN ANNOTATION.
+ * Returns ALL 600 records (300 SAFE + 300 UNSAFE), optionally filtered by task type.
+ * Annotators must evaluate Safe and Unsafe contextual variants separately —
+ * the same query text can have a different expected label depending on context.
  */
 export async function getPromptsForAnnotation(taskType?: 'NLU' | 'NLR' | 'NLG'): Promise<Prompt[]> {
   let query = supabase

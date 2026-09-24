@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import LogoutButton from '@/app/components/LogoutButton';
 import { getCompletedPromptIds } from '@/app/actions/evaluations';
-import { getPromptsForAnnotation } from '@/app/actions/prompts';
+import { getPromptsForTranslation } from '@/app/actions/prompts';
 import { Prompt } from '@/types/database';
 
 const PARTS = [
@@ -50,7 +50,7 @@ export default function TranslateHubPage() {
   });
 
   useEffect(() => {
-    Promise.all([getPromptsForAnnotation(), getCompletedPromptIds()]).then(([prompts, completedIds]) => {
+    Promise.all([getPromptsForTranslation(), getCompletedPromptIds()]).then(([prompts, completedIds]) => {
       const completedSet = new Set(completedIds);
 
       const counts: Record<string, { completed: number; total: number }> = {
