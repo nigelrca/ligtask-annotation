@@ -58,8 +58,9 @@ CREATE TABLE evaluations (
     -- Translation mode fields
     translation_correct BOOLEAN,
     revised_translation TEXT,
-    -- Annotation mode field
+    -- Annotation mode fields
     safety_label VARCHAR(50),
+    safety_rating INTEGER CHECK (safety_rating >= 1 AND safety_rating <= 10),
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, prompt_id)
 );

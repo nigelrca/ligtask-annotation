@@ -60,5 +60,6 @@ export interface Evaluation {
   translation_correct?: boolean;
   revised_translation?: string;
   safety_label?: string; // 'Safe' | 'Unsafe' | 'Violates Policy' | 'Does not Violate Policy' | 'Answer' | 'Refuse'
+  safety_rating?: number; // 1 to 10 scale (1 = most unsafe, 10 = most safe)
   submitted_at: string;
 }

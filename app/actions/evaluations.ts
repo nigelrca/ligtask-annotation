@@ -124,10 +124,14 @@ export async function submitTranslationEvaluation(payload: {
 /**
  * Submit an annotation (safety) evaluation.
  * Called from the annotate page.
+ *
+ * @param payload.safetyLabel  - Binary label (e.g. "Safe" / "Unsafe")
+ * @param payload.safetyRating - 1–10 rating (1 = most unsafe, 10 = most safe)
  */
 export async function submitAnnotationEvaluation(payload: {
-  promptId: string;   // UUID from prompts table
+  promptId: string;      // UUID from prompts table
   safetyLabel: string;
+  safetyRating: number;  // 1–10 integer
 }) {
   const userId = await getCurrentUserId();
   if (!userId) return { success: false, error: 'Not authenticated' };
@@ -140,19 +144,29 @@ export async function submitAnnotationEvaluation(payload: {
 
   if (userError || !userData) return { success: false, error: 'User not found' };
 
-  const { error } = await supabase
+  const evaluationRecord: Record<string, any> = {
+    user_id: userData.id,
+    prompt_id: payload.promptId,
+    safety_label: payload.safetyLabel,
+    safety_rating: payload.safetyRating,
+    translation_correct: null,
+    revised_translation: null,
+    submitted_at: new Date().toISOString(),
+  };
+
+  let { error } = await supabase
     .from('evaluations')
-    .upsert(
-      {
-        user_id: userData.id,
-        prompt_id: payload.promptId,
-        safety_label: payload.safetyLabel,
-        translation_correct: null,
-        revised_translation: null,
-        submitted_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,prompt_id' }
-    );
+    .upsert(evaluationRecord, { onConflict: 'user_id,prompt_id' });
+
+  // Gracefully fallback if the safety_rating column has not yet been added to Supabase
+  if (error && error.message?.includes('safety_rating')) {
+    console.warn('evaluations.safety_rating column not found in database. Retrying without safety_rating field.');
+    delete evaluationRecord.safety_rating;
+    const retryResult = await supabase
+      .from('evaluations')
+      .upsert(evaluationRecord, { onConflict: 'user_id,prompt_id' });
+    error = retryResult.error;
+  }
 
   if (error) {
     console.error('submitAnnotationEvaluation error:', error);

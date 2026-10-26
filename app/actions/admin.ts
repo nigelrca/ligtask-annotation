@@ -93,13 +93,14 @@ export async function getUserProgress() {
   // Get total prompt counts per task type
   const { data: promptCounts } = await supabase
     .from('prompts')
-    .select('task_type');
+    .select('task_type, context_intended_to_be_safe');
 
   const totalNLU = (promptCounts ?? []).filter(p => p.task_type === 'NLU').length;
   const totalNLR = (promptCounts ?? []).filter(p => p.task_type === 'NLR').length;
   const totalNLG = (promptCounts ?? []).filter(p => p.task_type === 'NLG').length;
-  const totalAnnotations = totalNLU + totalNLR + totalNLG;
-  const totalTranslations = (promptCounts ?? []).length;
+  const totalAnnotations = totalNLU + totalNLR + totalNLG; // 600 prompts for annotators
+  // Translators only review the 300 safe prompt variants (100 per task type)
+  const totalTranslations = (promptCounts ?? []).filter(p => p.context_intended_to_be_safe === true).length || 300;
 
   // Get evaluation counts per user
   const { data: evaluations } = await supabase
