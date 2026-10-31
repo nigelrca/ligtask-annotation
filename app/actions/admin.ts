@@ -102,14 +102,22 @@ export async function getUserProgress() {
   // Translators only review the 300 safe prompt variants (100 per task type)
   const totalTranslations = (promptCounts ?? []).filter(p => p.context_intended_to_be_safe === true).length || 300;
 
-  // Get evaluation counts per user
+  // Get evaluation counts per user.
+  // We select prompt_id so we can mirror the exact logic used on the user-facing
+  // annotate/translate pages, which count any evaluation row for a given prompt.
   const { data: evaluations } = await supabase
     .from('evaluations')
-    .select('user_id, safety_label, translation_correct');
+    .select('user_id, prompt_id, safety_label, translation_correct');
 
   return users.map(user => {
     const userEvals = (evaluations ?? []).filter(e => e.user_id === user.id);
-    const annotated = userEvals.filter(e => e.safety_label !== null).length;
+
+    // Annotators: count distinct prompt IDs that have been evaluated.
+    // This matches the user-facing annotate page which counts any eval row for the prompt,
+    // regardless of which fields are populated.
+    const annotated = new Set(userEvals.map(e => e.prompt_id)).size;
+
+    // Translators: count rows where translation_correct was explicitly submitted.
     const translated = userEvals.filter(e => e.translation_correct !== null).length;
 
     return {
