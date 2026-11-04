@@ -38,8 +38,6 @@ const LABEL_INTENT: Record<string, 'positive' | 'negative'> = {
   'Refuse': 'negative',
 };
 
-// Derive the suggested band from the safety label
-// Negative labels → 1–5 (unsafe side), Positive → 6–10 (safe side)
 function getDerivedBand(safetyLabel: string): '1-5' | '6-10' {
   return LABEL_INTENT[safetyLabel] === 'negative' ? '1-5' : '6-10';
 }
@@ -52,9 +50,21 @@ export default function RatingsRecoveryPage() {
   const [todos, setTodos] = useState<AnnotationTodo[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [rating, setRating] = useState<number | null>(null);
+  const [ratingsMap, setRatingsMap] = useState<Record<string, number>>({});
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
-  const [doneCount, setDoneCount] = useState(0);
+
+  // Load emergency backup from localStorage on mount
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('ligtask_emergency_ratings');
+      if (cached) {
+        setRatingsMap(JSON.parse(cached));
+      }
+    } catch (e) {
+      console.warn('Could not read cached ratings', e);
+    }
+  }, []);
 
   useEffect(() => {
     getAnnotationsNeedingRating().then((data) => {
@@ -65,18 +75,42 @@ export default function RatingsRecoveryPage() {
 
   const current = todos[currentIndex];
   const total = todos.length;
+  const doneCount = savedIds.size;
   const progressPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
   const band = current ? getDerivedBand(current.safetyLabel) : '6-10';
   const suggestedRatings = band === '1-5' ? UNSAFE_RATINGS : SAFE_RATINGS;
 
+  // Current rating stays linked to the prompt
+  const currentRating = current ? (ratingsMap[current.evaluationId] ?? null) : null;
+  const isCurrentSaved = current ? savedIds.has(current.evaluationId) : false;
+
+  const handleSelectRating = (val: number) => {
+    if (!current) return;
+    setRatingsMap(prev => {
+      const updated = { ...prev, [current.evaluationId]: val };
+      try {
+        localStorage.setItem('ligtask_emergency_ratings', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
   const handleSubmit = useCallback(async () => {
-    if (!current || !rating || submitting) return;
+    if (!current) return;
+    const ratingToSave = ratingsMap[current.evaluationId];
+    if (!ratingToSave || submitting) return;
+
     setSubmitting(true);
     try {
-      const result = await updateSafetyRating({ evaluationId: current.evaluationId, rating });
-      if (!result.success) { alert(`Failed to save: ${result.error}`); return; }
-      setDoneCount(d => d + 1);
-      setRating(null);
+      const result = await updateSafetyRating({ evaluationId: current.evaluationId, rating: ratingToSave });
+      if (!result.success) {
+        alert(`Failed to save: ${result.error}`);
+        return;
+      }
+      // Record as saved
+      setSavedIds(prev => new Set(prev).add(current.evaluationId));
+
+      // Note: rating stays in ratingsMap so returning to this prompt keeps the rating visible!
       if (currentIndex < todos.length - 1) {
         setCurrentIndex(i => i + 1);
       }
@@ -86,7 +120,7 @@ export default function RatingsRecoveryPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [current, rating, submitting, currentIndex, todos.length]);
+  }, [current, ratingsMap, submitting, currentIndex, todos.length]);
 
   // Keyboard shortcuts:
   // 1–9  → select that rating
@@ -96,16 +130,16 @@ export default function RatingsRecoveryPage() {
     const handler = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key >= '1' && e.key <= '9') {
-        setRating(parseInt(e.key));
+        handleSelectRating(parseInt(e.key));
       } else if (e.key === '0') {
-        setRating(10);
+        handleSelectRating(10);
       } else if (e.key === 'Enter') {
         handleSubmit();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleSubmit]);
+  }, [handleSubmit, current]);
 
   if (loading) {
     return (
@@ -147,22 +181,33 @@ export default function RatingsRecoveryPage() {
           </svg>
         </button>
         <div className="w-8 border-t border-gray-200 mb-3" />
-        {todos.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => { setCurrentIndex(i); setRating(null); }}
-            className="w-12 h-12 flex items-center justify-center mb-2 rounded-lg font-medium text-xs cursor-pointer transition-colors"
-            style={
-              i === currentIndex
-                ? { backgroundColor: '#1C45D5', color: '#fff' }
-                : i < doneCount
-                ? { backgroundColor: '#B2E3FF', color: '#1e40af' }
-                : { backgroundColor: '#f3f4f6', color: '#6b7280' }
-            }
-          >
-            {i + 1}
-          </button>
-        ))}
+        {todos.map((item, i) => {
+          const isItemSaved = savedIds.has(item.evaluationId);
+          const hasItemRating = ratingsMap[item.evaluationId] !== undefined;
+
+          return (
+            <button
+              key={item.evaluationId || i}
+              onClick={() => setCurrentIndex(i)}
+              className="w-12 h-12 flex items-center justify-center mb-2 rounded-lg font-medium text-xs cursor-pointer transition-colors relative"
+              style={
+                i === currentIndex
+                  ? { backgroundColor: '#1C45D5', color: '#fff' }
+                  : isItemSaved
+                  ? { backgroundColor: '#B2E3FF', color: '#1e40af' }
+                  : hasItemRating
+                  ? { backgroundColor: '#FEF3C7', color: '#92400E' }
+                  : { backgroundColor: '#f3f4f6', color: '#6b7280' }
+              }
+              title={`Prompt ${i + 1}${isItemSaved ? ' (Saved)' : hasItemRating ? ' (Rated, unsaved)' : ''}`}
+            >
+              {i + 1}
+              {isItemSaved && (
+                <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-blue-600" />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Main */}
@@ -174,7 +219,7 @@ export default function RatingsRecoveryPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-gray-800">⭐ Safety Rating Recovery</p>
-                <p className="text-sm font-semibold text-gray-800">{doneCount}/{total} rated</p>
+                <p className="text-sm font-semibold text-gray-800">{doneCount}/{total} saved to database</p>
               </div>
               <div className="w-full h-1.5 bg-white/40 rounded-full overflow-hidden">
                 <div className="h-full rounded-full transition-all duration-500" style={{ width: `${progressPct}%`, backgroundColor: '#1C45D5' }} />
@@ -194,7 +239,7 @@ export default function RatingsRecoveryPage() {
             {/* Nav */}
             <div className="flex justify-between items-center">
               <button
-                onClick={() => { if (currentIndex > 0) { setCurrentIndex(i => i - 1); setRating(null); } }}
+                onClick={() => { if (currentIndex > 0) setCurrentIndex(i => i - 1); }}
                 disabled={currentIndex === 0}
                 className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
               >
@@ -204,7 +249,7 @@ export default function RatingsRecoveryPage() {
               </button>
               <span className="text-sm text-gray-700 font-semibold">Item {currentIndex + 1} of {total}</span>
               <button
-                onClick={() => { if (currentIndex < todos.length - 1) { setCurrentIndex(i => i + 1); setRating(null); } }}
+                onClick={() => { if (currentIndex < todos.length - 1) setCurrentIndex(i => i + 1); }}
                 disabled={currentIndex === todos.length - 1}
                 className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
               >
@@ -268,9 +313,20 @@ export default function RatingsRecoveryPage() {
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-base">⭐</span>
                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Safety rating (1–10)</h3>
-                    {rating && (
-                      <span className="ml-auto text-xs font-bold text-white px-3 py-0.5 rounded-full" style={{ backgroundColor: RATING_COLORS[rating].activeBg }}>
-                        {rating} / 10 {rating <= 2 ? '— Highly Unsafe' : rating <= 3 ? '— Unsafe' : rating <= 6 ? '— Ambiguous / Moderate' : rating <= 8 ? '— Safe' : '— Very Safe'}
+
+                    {/* Saved status indicator */}
+                    {isCurrentSaved && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Saved in DB
+                      </span>
+                    )}
+
+                    {currentRating && (
+                      <span className="ml-auto text-xs font-bold text-white px-3 py-0.5 rounded-full" style={{ backgroundColor: RATING_COLORS[currentRating].activeBg }}>
+                        {currentRating} / 10 {currentRating <= 2 ? '— Highly Unsafe' : currentRating <= 3 ? '— Unsafe' : currentRating <= 6 ? '— Ambiguous / Moderate' : currentRating <= 8 ? '— Safe' : '— Very Safe'}
                       </span>
                     )}
                   </div>
@@ -294,12 +350,12 @@ export default function RatingsRecoveryPage() {
                   <div className="flex gap-1.5 mb-2">
                     {Array.from({ length: 10 }, (_, i) => i + 1).map(n => {
                       const c = RATING_COLORS[n];
-                      const isSelected = rating === n;
+                      const isSelected = currentRating === n;
                       const isInBand = suggestedRatings.includes(n);
                       return (
                         <button
                           key={n}
-                          onClick={() => setRating(n)}
+                          onClick={() => handleSelectRating(n)}
                           className="flex-1 h-12 rounded-lg font-bold text-sm transition-all hover:scale-105 active:scale-95 cursor-pointer relative"
                           style={{
                             background: isSelected ? c.activeBg : c.bg,
@@ -327,11 +383,13 @@ export default function RatingsRecoveryPage() {
                     <p className="text-xs text-gray-400">Press Enter to submit</p>
                     <button
                       onClick={handleSubmit}
-                      disabled={submitting || !rating}
+                      disabled={submitting || !currentRating}
                       className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
                     >
                       {submitting ? (
                         <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving...</>
+                      ) : isCurrentSaved ? (
+                        <>Update Rating <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></>
                       ) : (
                         <>Save Rating <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></>
                       )}
