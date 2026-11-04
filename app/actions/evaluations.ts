@@ -24,16 +24,29 @@ export async function getCompletedPromptIds(): Promise<string[]> {
   // Resolve internal UUID from user_id string
   const { data: userData, error: userError } = await supabase
     .from('users')
-    .select('id')
+    .select('id, role')
     .eq('user_id', userId)
     .single();
 
   if (userError || !userData) return [];
 
-  const { data, error } = await supabase
+  // Filter by the relevant field for this user's role:
+  // - Annotators: only count rows where safety_label was submitted
+  // - Translators: only count rows where translation_correct was submitted
+  // This prevents translation eval rows from inflating annotator progress (and vice versa).
+  const isAnnotator = (userData as unknown as { role: string }).role === 'ANNOTATOR';
+  let query = supabase
     .from('evaluations')
     .select('prompt_id')
     .eq('user_id', userData.id);
+
+  if (isAnnotator) {
+    query = query.not('safety_label', 'is', null);
+  } else {
+    query = query.not('translation_correct', 'is', null);
+  }
+
+  const { data, error } = await query;
 
   if (error || !data) return [];
 

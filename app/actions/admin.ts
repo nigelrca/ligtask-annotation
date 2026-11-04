@@ -112,12 +112,9 @@ export async function getUserProgress() {
   return users.map(user => {
     const userEvals = (evaluations ?? []).filter(e => e.user_id === user.id);
 
-    // Annotators: count distinct prompt IDs that have been evaluated.
-    // This matches the user-facing annotate page which counts any eval row for the prompt,
-    // regardless of which fields are populated.
-    const annotated = new Set(userEvals.map(e => e.prompt_id)).size;
-
-    // Translators: count rows where translation_correct was explicitly submitted.
+    // Count only rows where the relevant field was actually submitted for this role.
+    // This is the source of truth — matches what the user-facing pages now show.
+    const annotated = userEvals.filter(e => e.safety_label !== null).length;
     const translated = userEvals.filter(e => e.translation_correct !== null).length;
 
     return {
@@ -179,8 +176,7 @@ export async function getRecentEvaluations() {
       users ( user_id, name, role ),
       prompts ( base_id, task_instance_id, task_type, category )
     `)
-    .order('submitted_at', { ascending: false })
-    .limit(50);
+    .order('submitted_at', { ascending: false });
 
   if (error) {
     console.error('getRecentEvaluations error:', error);
