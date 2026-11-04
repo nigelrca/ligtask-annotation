@@ -176,7 +176,8 @@ export async function getRecentEvaluations() {
       users ( user_id, name, role ),
       prompts ( base_id, task_instance_id, task_type, category )
     `)
-    .order('submitted_at', { ascending: false });
+    .order('submitted_at', { ascending: false })
+    .range(0, 9999);
 
   if (error) {
     console.error('getRecentEvaluations error:', error);
