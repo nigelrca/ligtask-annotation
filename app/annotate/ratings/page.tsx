@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import LogoutButton from '@/app/components/LogoutButton';
-import { getAnnotationsNeedingRating, updateSafetyRating } from '@/app/actions/evaluations';
+import { getAnnotationsNeedingRating, updateSafetyRating, resetMySafetyRatings } from '@/app/actions/evaluations';
 
 interface AnnotationTodo {
   evaluationId: string;
@@ -12,6 +12,7 @@ interface AnnotationTodo {
   taskInstanceId: string;
   taskType: string;
   safetyLabel: string;
+  safetyRating: number | null;
   englishText: string;
   filipinoText: string;
 }
@@ -53,6 +54,7 @@ export default function RatingsRecoveryPage() {
   const [ratingsMap, setRatingsMap] = useState<Record<string, number>>({});
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // Load emergency backup from localStorage on mount
   useEffect(() => {
@@ -69,9 +71,40 @@ export default function RatingsRecoveryPage() {
   useEffect(() => {
     getAnnotationsNeedingRating().then((data) => {
       setTodos(data as AnnotationTodo[]);
+      const initialSaved = new Set<string>();
+      const initialRatings: Record<string, number> = {};
+      data.forEach((d: any) => {
+        if (d.safetyRating !== null && d.safetyRating !== undefined) {
+          initialSaved.add(d.evaluationId);
+          initialRatings[d.evaluationId] = d.safetyRating;
+        }
+      });
+      setSavedIds(initialSaved);
+      setRatingsMap(prev => ({ ...initialRatings, ...prev }));
       setLoading(false);
     });
   }, []);
+
+  const handleResetRatings = async () => {
+    if (!confirm('Are you sure you want to reset all your safety ratings back to 0?')) return;
+    setResetting(true);
+    try {
+      const res = await resetMySafetyRatings();
+      if (res.success) {
+        setSavedIds(new Set());
+        setRatingsMap({});
+        try { localStorage.removeItem('ligtask_emergency_ratings'); } catch (e) {}
+        alert('All safety ratings have been cleared.');
+      } else {
+        alert(`Failed to reset: ${res.error}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error resetting ratings');
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const current = todos[currentIndex];
   const total = todos.length;
@@ -218,7 +251,19 @@ export default function RatingsRecoveryPage() {
             {/* Progress */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-800">⭐ Safety Rating Recovery</p>
+                <div className="flex items-center gap-3">
+                  <p className="text-sm font-semibold text-gray-800">⭐ Safety Rating Recovery</p>
+                  {doneCount > 0 && (
+                    <button
+                      onClick={handleResetRatings}
+                      disabled={resetting}
+                      className="text-xs text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg border border-red-200 transition-colors cursor-pointer"
+                      title="Clear saved ratings and restart from 0"
+                    >
+                      {resetting ? 'Resetting...' : 'Reset My Ratings'}
+                    </button>
+                  )}
+                </div>
                 <p className="text-sm font-semibold text-gray-800">{doneCount}/{total} saved to database</p>
               </div>
               <div className="w-full h-1.5 bg-white/40 rounded-full overflow-hidden">

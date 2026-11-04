@@ -190,8 +190,8 @@ export async function submitAnnotationEvaluation(payload: {
 }
 
 /**
- * Fetch all annotations submitted by the current user that are missing a safety_rating.
- * Used by the ratings recovery page so annotators can fill in ratings they already submitted.
+ * Fetch all annotations submitted by the current user.
+ * Returns all 600 items so the prompt count remains constant at 600.
  */
 export async function getAnnotationsNeedingRating() {
   const userId = await getCurrentUserId();
@@ -215,14 +215,23 @@ export async function getAnnotationsNeedingRating() {
       prompts ( id, base_id, task_instance_id, task_type, english_text, filipino_text )
     `)
     .eq('user_id', userData.id)
-    .not('safety_label', 'is', null)
-    .is('safety_rating', null)
-    .order('submitted_at', { ascending: true });
+    .not('safety_label', 'is', null);
 
   if (error || !data) {
     console.error('getAnnotationsNeedingRating error:', error);
     return [];
   }
+
+  // Stable sort matching annotation order
+  const taskOrder: Record<string, number> = { NLU: 1, NLR: 2, NLG: 3 };
+  data.sort((a: any, b: any) => {
+    const tA = taskOrder[a.prompts?.task_type] ?? 99;
+    const tB = taskOrder[b.prompts?.task_type] ?? 99;
+    if (tA !== tB) return tA - tB;
+    const baseCompare = (a.prompts?.base_id || '').localeCompare(b.prompts?.base_id || '', undefined, { numeric: true });
+    if (baseCompare !== 0) return baseCompare;
+    return (a.prompts?.task_instance_id || '').localeCompare(b.prompts?.task_instance_id || '');
+  });
 
   return data.map((e: any) => ({
     evaluationId: e.id,
@@ -231,9 +240,39 @@ export async function getAnnotationsNeedingRating() {
     taskInstanceId: e.prompts?.task_instance_id ?? '',
     taskType: e.prompts?.task_type ?? '',
     safetyLabel: e.safety_label ?? '',
+    safetyRating: e.safety_rating ?? null,
     englishText: e.prompts?.english_text ?? '',
     filipinoText: e.prompts?.filipino_text ?? '',
   }));
+}
+
+/**
+ * Reset safety ratings for the current user (e.g. to clear test ratings).
+ */
+export async function resetMySafetyRatings() {
+  const userId = await getCurrentUserId();
+  if (!userId) return { success: false, error: 'Not authenticated' };
+
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('user_id', userId)
+    .single();
+
+  if (userError || !userData) return { success: false, error: 'User not found' };
+
+  const { error } = await supabase
+    .from('evaluations')
+    .update({ safety_rating: null })
+    .eq('user_id', userData.id)
+    .not('safety_rating', 'is', null);
+
+  if (error) {
+    console.error('resetMySafetyRatings error:', error);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
 }
 
 /**
