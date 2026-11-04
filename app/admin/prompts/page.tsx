@@ -9,8 +9,11 @@ interface Prompt {
   base_id: string;
   task_instance_id: string;
   english_text: string;
+  filipino_text?: string;
   task_type: 'NLU' | 'NLR' | 'NLG';
   category: string;
+  context_intended_to_be_safe?: boolean;
+  instruction?: string;
   created_at: string;
 }
 
