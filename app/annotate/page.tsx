@@ -157,6 +157,22 @@ export default function AnnotateHubPage() {
                 </button>
               );
             })}
+
+            {/* Recovery: complete missing safety ratings */}
+            <button
+              onClick={() => router.push('/annotate/ratings')}
+              className="w-full text-left bg-amber-50 hover:bg-amber-100 rounded-xl px-5 py-4 transition-colors border border-amber-200 mt-2"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-amber-900 text-sm">⭐ Complete Safety Ratings</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Quickly add the 1–10 safety rating scale for your already-submitted annotations.</p>
+                </div>
+                <svg className="w-5 h-5 text-amber-500 ml-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </button>
           </div>
 
         </div>

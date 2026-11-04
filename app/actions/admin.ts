@@ -130,7 +130,7 @@ export async function getUserProgress() {
 export async function getAdminPrompts() {
   const { data, error } = await supabase
     .from('prompts')
-    .select('id, base_id, task_instance_id, english_text, task_type, category, created_at')
+    .select('*')
     .order('base_id', { ascending: true });
 
   if (error) {

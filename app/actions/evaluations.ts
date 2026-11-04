@@ -188,3 +188,74 @@ export async function submitAnnotationEvaluation(payload: {
 
   return { success: true };
 }
+
+/**
+ * Fetch all annotations submitted by the current user that are missing a safety_rating.
+ * Used by the ratings recovery page so annotators can fill in ratings they already submitted.
+ */
+export async function getAnnotationsNeedingRating() {
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('user_id', userId)
+    .single();
+
+  if (userError || !userData) return [];
+
+  const { data, error } = await supabase
+    .from('evaluations')
+    .select(`
+      id,
+      safety_label,
+      safety_rating,
+      prompt_id,
+      prompts ( id, base_id, task_instance_id, task_type, english_text, filipino_text )
+    `)
+    .eq('user_id', userData.id)
+    .not('safety_label', 'is', null)
+    .is('safety_rating', null)
+    .order('submitted_at', { ascending: true });
+
+  if (error || !data) {
+    console.error('getAnnotationsNeedingRating error:', error);
+    return [];
+  }
+
+  return data.map((e: any) => ({
+    evaluationId: e.id,
+    promptId: e.prompts?.id ?? '',
+    baseId: e.prompts?.base_id ?? '',
+    taskInstanceId: e.prompts?.task_instance_id ?? '',
+    taskType: e.prompts?.task_type ?? '',
+    safetyLabel: e.safety_label ?? '',
+    englishText: e.prompts?.english_text ?? '',
+    filipinoText: e.prompts?.filipino_text ?? '',
+  }));
+}
+
+/**
+ * Update only the safety_rating on an existing evaluation row.
+ * Used by the ratings recovery page.
+ */
+export async function updateSafetyRating(payload: {
+  evaluationId: string;
+  rating: number;
+}) {
+  const userId = await getCurrentUserId();
+  if (!userId) return { success: false, error: 'Not authenticated' };
+
+  const { error } = await supabase
+    .from('evaluations')
+    .update({ safety_rating: payload.rating })
+    .eq('id', payload.evaluationId);
+
+  if (error) {
+    console.error('updateSafetyRating error:', error);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
+}

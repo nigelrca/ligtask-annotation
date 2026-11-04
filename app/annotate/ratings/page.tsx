@@ -38,6 +38,15 @@ const LABEL_INTENT: Record<string, 'positive' | 'negative'> = {
   'Refuse': 'negative',
 };
 
+// Derive the suggested band from the safety label
+// Negative labels → 1–5 (unsafe side), Positive → 6–10 (safe side)
+function getDerivedBand(safetyLabel: string): '1-5' | '6-10' {
+  return LABEL_INTENT[safetyLabel] === 'negative' ? '1-5' : '6-10';
+}
+
+const UNSAFE_RATINGS = [1, 2, 3, 4, 5];
+const SAFE_RATINGS   = [6, 7, 8, 9, 10];
+
 export default function RatingsRecoveryPage() {
   const router = useRouter();
   const [todos, setTodos] = useState<AnnotationTodo[]>([]);
@@ -57,6 +66,8 @@ export default function RatingsRecoveryPage() {
   const current = todos[currentIndex];
   const total = todos.length;
   const progressPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const band = current ? getDerivedBand(current.safetyLabel) : '6-10';
+  const suggestedRatings = band === '1-5' ? UNSAFE_RATINGS : SAFE_RATINGS;
 
   const handleSubmit = useCallback(async () => {
     if (!current || !rating || submitting) return;
@@ -80,7 +91,7 @@ export default function RatingsRecoveryPage() {
   // Keyboard shortcuts:
   // 1–9  → select that rating
   // 0    → select rating 10
-  // Enter → submit current rating
+  // Enter → submit
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -159,7 +170,7 @@ export default function RatingsRecoveryPage() {
         <div className="flex items-start justify-center p-8 min-h-full">
           <div className="w-full max-w-3xl space-y-4">
 
-            {/* Header */}
+            {/* Progress */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-gray-800">⭐ Safety Rating Recovery</p>
@@ -173,7 +184,11 @@ export default function RatingsRecoveryPage() {
             {/* Keyboard hint */}
             <div className="bg-white/70 rounded-xl px-4 py-2 text-xs text-gray-600 flex items-center gap-2">
               <span>⌨️</span>
-              <span>Press <kbd className="bg-gray-100 border border-gray-300 rounded px-1.5 py-0.5 font-mono font-bold">1</kbd>–<kbd className="bg-gray-100 border border-gray-300 rounded px-1.5 py-0.5 font-mono font-bold">9</kbd> to select rating, <kbd className="bg-gray-100 border border-gray-300 rounded px-1.5 py-0.5 font-mono font-bold">0</kbd> for 10, <kbd className="bg-gray-100 border border-gray-300 rounded px-1.5 py-0.5 font-mono font-bold">Enter</kbd> to save</span>
+              <span>
+                Press <kbd className="bg-gray-100 border border-gray-300 rounded px-1.5 py-0.5 font-mono font-bold">1</kbd>–<kbd className="bg-gray-100 border border-gray-300 rounded px-1.5 py-0.5 font-mono font-bold">9</kbd> to select rating,{' '}
+                <kbd className="bg-gray-100 border border-gray-300 rounded px-1.5 py-0.5 font-mono font-bold">0</kbd> for 10,{' '}
+                <kbd className="bg-gray-100 border border-gray-300 rounded px-1.5 py-0.5 font-mono font-bold">Enter</kbd> to save
+              </span>
             </div>
 
             {/* Nav */}
@@ -201,8 +216,9 @@ export default function RatingsRecoveryPage() {
 
             {current && (
               <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+
                 {/* Prompt header */}
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-3">
                     <span className={`px-2 py-1 text-xs font-bold rounded-full ${
                       current.taskType === 'NLU' ? 'bg-blue-100 text-blue-800' :
@@ -211,11 +227,22 @@ export default function RatingsRecoveryPage() {
                     }`}>{current.taskType}</span>
                     <span className="font-mono text-sm text-gray-600">{current.taskInstanceId}</span>
                   </div>
-                  <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                    isPositive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    Your label: {current.safetyLabel}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {/* Their existing binary label */}
+                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                      isPositive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {current.safetyLabel}
+                    </span>
+                    {/* Derived band hint */}
+                    <span className={`px-3 py-1 text-xs font-bold rounded-full border ${
+                      band === '1-5'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : 'bg-green-50 text-green-700 border-green-200'
+                    }`}>
+                      Suggested range: {band}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Prompt text */}
@@ -248,23 +275,46 @@ export default function RatingsRecoveryPage() {
                     )}
                   </div>
 
+                  {/* Band guide */}
+                  <div className={`mb-4 px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                    band === '1-5'
+                      ? 'bg-red-50 border border-red-100 text-red-700'
+                      : 'bg-green-50 border border-green-100 text-green-700'
+                  }`}>
+                    <span className="text-sm">{band === '1-5' ? '🔴' : '🟢'}</span>
+                    <span>
+                      Based on your <strong>{current.safetyLabel}</strong> label, your rating should be in the{' '}
+                      <strong>{band}</strong> range.{' '}
+                      {band === '1-5'
+                        ? 'Pick a lower number if the prompt is very clearly unsafe, higher if it\'s borderline.'
+                        : 'Pick a higher number if the prompt is very clearly safe, lower if it\'s borderline.'}
+                    </span>
+                  </div>
+
                   <div className="flex gap-1.5 mb-2">
                     {Array.from({ length: 10 }, (_, i) => i + 1).map(n => {
                       const c = RATING_COLORS[n];
                       const isSelected = rating === n;
+                      const isInBand = suggestedRatings.includes(n);
                       return (
                         <button
                           key={n}
                           onClick={() => setRating(n)}
-                          className="flex-1 h-12 rounded-lg font-bold text-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                          className="flex-1 h-12 rounded-lg font-bold text-sm transition-all hover:scale-105 active:scale-95 cursor-pointer relative"
                           style={{
                             background: isSelected ? c.activeBg : c.bg,
-                            border: `2px solid ${isSelected ? c.activeBorder : c.border}`,
+                            border: `2px solid ${isSelected ? c.activeBorder : isInBand ? c.activeBorder : c.border}`,
                             color: isSelected ? c.activeText : c.text,
                             transform: isSelected ? 'translateY(-2px)' : 'none',
                             boxShadow: isSelected ? `0 6px 16px ${c.activeBg}50` : 'none',
+                            opacity: isInBand ? 1 : 0.4,
                           }}
-                        >{n}</button>
+                        >
+                          {n}
+                          {isInBand && !isSelected && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ backgroundColor: c.activeBg }} />
+                          )}
+                        </button>
                       );
                     })}
                   </div>
@@ -296,4 +346,3 @@ export default function RatingsRecoveryPage() {
     </div>
   );
 }
-

@@ -66,6 +66,41 @@ export default function AdminPromptsPage() {
     NLG: prompts.filter(p => p.task_type === 'NLG').length,
   };
 
+  function handleExportCSV() {
+    if (prompts.length === 0) return;
+
+    const rows = prompts.map(p => ({
+      id: p.id,
+      base_id: p.base_id,
+      task_instance_id: p.task_instance_id,
+      task_type: p.task_type,
+      category: p.category,
+      context_intended_to_be_safe: p.context_intended_to_be_safe,
+      english_text: p.english_text,
+      filipino_text: p.filipino_text || '',
+      instruction: p.instruction || '',
+      created_at: p.created_at,
+    }));
+
+    const headers = Object.keys(rows[0] ?? {}).join(',');
+    const csv = [
+      headers,
+      ...rows.map(r =>
+        Object.values(r)
+          .map(v => `"${String(v ?? '').replace(/"/g, '""')}"`)
+          .join(',')
+      ),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ligtask-prompts-dataset-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow">
@@ -76,6 +111,18 @@ export default function AdminPromptsPage() {
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Prompt Management</h1>
           </div>
+          <button
+            onClick={handleExportCSV}
+            disabled={prompts.length === 0}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export All Prompts CSV
+          </button>
         </div>
       </header>
 
