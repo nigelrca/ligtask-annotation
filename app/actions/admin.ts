@@ -165,25 +165,37 @@ export async function getEvaluationStats() {
 }
 
 export async function getRecentEvaluations() {
-  const { data, error } = await supabase
-    .from('evaluations')
-    .select(`
-      id,
-      submitted_at,
-      translation_correct,
-      revised_translation,
-      safety_label,
-      users ( user_id, name, role ),
-      prompts ( base_id, task_instance_id, task_type, category )
-    `)
-    .order('submitted_at', { ascending: false })
-    .range(0, 9999);
+  const PAGE_SIZE = 1000;
+  let allData: any[] = [];
+  let from = 0;
 
-  if (error) {
-    console.error('getRecentEvaluations error:', error);
-    return [];
+  while (true) {
+    const { data, error } = await supabase
+      .from('evaluations')
+      .select(`
+        id,
+        submitted_at,
+        translation_correct,
+        revised_translation,
+        safety_label,
+        users ( user_id, name, role ),
+        prompts ( base_id, task_instance_id, task_type, category )
+      `)
+      .order('submitted_at', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) {
+      console.error('getRecentEvaluations error:', error);
+      return [];
+    }
+
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
   }
-  return data;
+
+  return allData;
 }
 
 export async function getPromptCompletionStats() {
