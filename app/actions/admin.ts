@@ -178,6 +178,7 @@ export async function getRecentEvaluations() {
         translation_correct,
         revised_translation,
         safety_label,
+        safety_rating,
         users ( user_id, name, role ),
         prompts ( base_id, task_instance_id, task_type, category )
       `)

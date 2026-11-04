@@ -10,6 +10,7 @@ interface Evaluation {
   translation_correct: boolean | null;
   revised_translation: string | null;
   safety_label: string | null;
+  safety_rating: number | null;
   users: { user_id: string; name: string; role: string } | null;
   prompts: { base_id: string; task_instance_id: string; task_type: string; category: string } | null;
 }
@@ -55,6 +56,7 @@ export default function AdminResultsPage() {
       translation_correct: e.translation_correct ?? '',
       revised_translation: e.revised_translation ?? '',
       safety_label: e.safety_label ?? '',
+      safety_rating: e.safety_rating ?? '',
       submitted_at: e.submitted_at,
     }));
 
